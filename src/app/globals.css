@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* The Understudy palette. Gunmetal instrument room with signal accents. */
+  --console-black: #0a0b0d;
+  --gunmetal: #1c2024;
+  --graphite: #2e343a;
+  --instrument-white: #d8dee4;
+  --signal-cyan: #38e1d6;
+  --hazard-amber: #e8a53c;
+  --steel-blue: #5a7184;
+  --label-grey: #8a929a;
+}
+
+html,
+body {
+  background-color: var(--console-black);
+  color: var(--instrument-white);
+  font-family: var(--font-machine), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Dark console vignette plus a fine brushed-metal grain. */
+.console-vignette {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(46, 52, 58, 0.5) 0%, rgba(10, 11, 13, 0) 60%),
+    radial-gradient(140% 120% at 50% 120%, rgba(28, 32, 36, 0.6) 0%, rgba(10, 11, 13, 0) 55%),
+    var(--console-black);
+}
+
+/* Etched panel seam lines, thin and deliberate. */
+.panel-grain {
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(216, 222, 228, 0.018) 0px,
+      rgba(216, 222, 228, 0.018) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(216, 222, 228, 0.012) 0px,
+      rgba(216, 222, 228, 0.012) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+}
+
+/* Brushed anodized metal surface. */
+.brushed {
+  background:
+    linear-gradient(180deg, rgba(46, 52, 58, 0.92), rgba(28, 32, 36, 0.96)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(216, 222, 228, 0.04) 0px,
+      rgba(216, 222, 228, 0.04) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+}
+
+/* Machined panel: hard edges, beveled seam, inset shadow. */
+.machined {
+  border: 1px solid rgba(138, 146, 154, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(216, 222, 228, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+.machined-inset {
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.7),
+    inset 0 0 0 1px rgba(138, 146, 154, 0.1);
+}
+
+/* Fine engraved label text. */
+.etch {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--label-grey);
+}
+
+.etch-deep {
+  color: var(--label-grey);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+/* LED edge glow utilities, color-restricted by class. */
+.led-cyan {
+  color: var(--signal-cyan);
+  box-shadow: 0 0 6px rgba(56, 225, 214, 0.7), 0 0 12px rgba(56, 225, 214, 0.35);
+}
+
+.led-amber {
+  color: var(--hazard-amber);
+  box-shadow: 0 0 6px rgba(232, 165, 60, 0.7), 0 0 12px rgba(232, 165, 60, 0.35);
+}
+
+.glow-cyan {
+  box-shadow: 0 0 0 1px rgba(56, 225, 214, 0.5), 0 0 18px rgba(56, 225, 214, 0.25);
+}
+
+.glow-amber {
+  box-shadow: 0 0 0 1px rgba(232, 165, 60, 0.5), 0 0 18px rgba(232, 165, 60, 0.25);
+}
+
+.text-cyan {
+  color: var(--signal-cyan);
+}
+
+.text-amber {
+  color: var(--hazard-amber);
+}
+
+/* Thin scan-line overlay for the verifying state. */
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(56, 225, 214, 0.05) 0px,
+    rgba(56, 225, 214, 0.05) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* Custom scrollbars to feel instrument-like. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--graphite) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--graphite);
+  border: 1px solid rgba(138, 146, 154, 0.2);
+}
+
+/* Focus ring for accessibility: a hard machined outline, not a soft halo. */
+:focus-visible {
+  outline: 2px solid var(--signal-cyan);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
