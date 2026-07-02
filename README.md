@@ -4,138 +4,83 @@
 
 **It learns your calls, and makes them when you are away.**
 
-A mechanical control console for bounded autonomous delegation. You teach cases;
-an Intelligent Contract stores your logic as a canonical principle set; GenLayer
-validators verify every ruling stays inside it.
-
-[![Live Demo](https://img.shields.io/badge/Live_Demo-the--understudy.pages.dev-06b6d4?style=for-the-badge)](https://the-understudy.pages.dev)
-[![Network](https://img.shields.io/badge/Network-Testnet_Bradbury-f59e0b?style=for-the-badge)](https://explorer-bradbury.genlayer.com/address/0x8C7Fe645E3017571e79592DF1beE6a7429f6b450)
-[![GenLayer](https://img.shields.io/badge/GenLayer-Intelligent_Contract-111827?style=for-the-badge)](https://genlayer.com)
-[![Next.js 14](https://img.shields.io/badge/Next.js-14-000000?style=for-the-badge&logo=next.js)](https://nextjs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Network](https://img.shields.io/badge/Network-GenLayer_Bradbury-f59e0b?style=flat-square)](https://explorer-bradbury.genlayer.com/address/0x8C7Fe645E3017571e79592DF1beE6a7429f6b450)
+[![chainId](https://img.shields.io/badge/chainId-4221-6366f1?style=flat-square)](https://explorer-bradbury.genlayer.com)
+[![Status](https://img.shields.io/badge/Status-live-16a34a?style=flat-square)](https://the-understudy.pages.dev)
+[![Contract](https://img.shields.io/badge/Contract-Python_GenVM-111827?style=flat-square)](contracts/UnderstudyContract.py)
+[![Frontend](https://img.shields.io/badge/Frontend-Next.js-000000?style=flat-square&logo=next.js)](https://nextjs.org)
 
 </div>
 
----
+## On-chain proof
 
-## 1. Summary
+Every stage of the understudy lifecycle below is a real transaction on GenLayer Testnet Bradbury. Follow the explorer links to verify.
 
-The Understudy is a delegated-agent and consistency guard implemented as a
-single Intelligent Contract on GenLayer. It exists to make one class of problem
-safe: letting an agent act on your behalf while you are away, without letting it
-drift outside your stated judgment.
+**Contract:** [`0x8C7Fe645E3017571e79592DF1beE6a7429f6b450`](https://explorer-bradbury.genlayer.com/address/0x8C7Fe645E3017571e79592DF1beE6a7429f6b450)
 
-The operating loop is a datasheet, not a metaphor:
+### Verified lifecycle on Bradbury
 
-| Stage        | Actor                | Effect on canonical state                                              |
-| ------------ | -------------------- | ---------------------------------------------------------------------- |
-| Boot         | Owner                | Arms the machine; owner and empty principle set are recorded.          |
-| Teach        | Owner                | A case (situation, call, reasoning) is read against the principle set. |
-| Grow / Flag  | Validators           | A coherent case adds one clamped principle facet; a contradiction is recorded as a tension, never blended. |
-| Submit       | Anyone               | A new situation docks in the decision bay.                             |
-| Rule         | Understudy           | The agent proposes a ruling and self-assesses consistency.             |
-| Verify       | Validators           | Consistent rulings become canonical actions; contradictory ones are quarantined and held for the owner. |
-| Step in      | Owner                | Manual resolution of a quarantined case, with an optional clarifier.   |
+| Step | Method | Transaction |
+| --- | --- | --- |
+| Arm the machine | `boot` | [`0x836bae0f...86e9c300`](https://explorer-bradbury.genlayer.com/tx/0x836bae0feddd77c386aec354469ec8332136cacbd3b2c8fb9e00b21286e9c300) |
+| Teach case 1 | `teach` | [`0x937c4fd2...c9ba9b82`](https://explorer-bradbury.genlayer.com/tx/0x937c4fd210089b331875a2cc43a3e343bc7dc860ca08fce324aef121c9ba9b82) |
+| Teach case 2 | `teach` | [`0x91c499d7...e840a70162`](https://explorer-bradbury.genlayer.com/tx/0x91c499d75757e6cefc600444fc7fe74bccb5d1b74df13a01a962d9e840a70162) |
+| Dock a situation | `submit_situation` | [`0xb57fbf97...cc88ec8`](https://explorer-bradbury.genlayer.com/tx/0xb57fbf9787f5c52fbb76d45d8ca65b925db803cc62cb33d4a98f1b572cc88ec8) |
+| Rule (accepted, consistent with principles) | `rule` | [`0xda85de32...ab1efb84`](https://explorer-bradbury.genlayer.com/tx/0xda85de32a714b846833d15a1c463c43ffef0712a93e4626fda7f551cab1efb84) |
 
-A principle is a compact clamped rule. A ruling is a concrete call plus the
-consistency verdict that decides whether it may stand. Nothing crosses from
-proposal to canonical action without independent validator agreement.
+**Live app:** https://the-understudy.pages.dev
 
-- Live app: https://the-understudy.pages.dev
-- Contract (Testnet Bradbury): [`0x8C7Fe645E3017571e79592DF1beE6a7429f6b450`](https://explorer-bradbury.genlayer.com/address/0x8C7Fe645E3017571e79592DF1beE6a7429f6b450)
-- Verified live lifecycle on Bradbury: boot -> teach x2 -> submit_situation -> rule (accepted, consistent with principles).
+## What it is
 
-## 2. Consensus model
+The Understudy is a delegated agent that learns to make your calls and acts for you within your stated principles. You teach it small cases in natural language: a situation, the call you made, and your reasoning. Each case is read against the principles it already holds, and a coherent case grows the logic core by one canonical rule.
 
-Bounded autonomous delegation needs a public, auditable boundary that third
-parties can check, not a private bot whose operator you must trust. Two
-judgments in this system are subjective and cannot be settled by a single
-server:
+When a real situation docks while you are away, the understudy proposes a ruling and self-assesses whether that ruling stays inside your principles. The decision only becomes a canonical action when the network agrees it is consistent. Contradictory rulings are never applied silently; they are held for you.
 
-1. Does a newly taught case cohere with, extend, or contradict the principles
-   already learned?
-2. Does a proposed ruling stay inside those principles?
+## Why it needs GenLayer
 
-GenLayer runs both as non-deterministic LLM calls and has multiple validators
-independently reproduce the interpretation. Canonical state changes only when
-validators agree on the load-bearing field: the relation when teaching, the
-consistency boolean when ruling. This is why GenLayer is load-bearing rather
-than incidental. The boundary is enforced by consensus, not by an operator who
-could quietly redraw it.
+The Understudy is a delegated agent plus a consistency guard. Teach cases become a canonical principle set. When a situation is submitted, the understudy proposes a ruling and validators verify it is consistent with the principles. Consistent rulings become canonical actions; contradictory ones are quarantined. Deciding whether a lesson coheres with existing principles, and whether a proposed ruling stays inside them, is a subjective semantic judgment that a single trusted server could fake. GenLayer runs both steps as non-deterministic LLM calls and has multiple validators independently reproduce the interpretation before canonical state changes.
 
 Deterministic guards bound the model so autonomy stays inside the fence:
 
-| Guard                     | Rule enforced deterministically                                             |
-| ------------------------- | --------------------------------------------------------------------------- |
-| Owner-gated authority     | Only the owner (keyholder) may teach or step in.                            |
-| No auto-applied conflict  | A contradictory ruling is quarantined and never applied automatically.      |
-| Contradictions flagged    | A contradicting lesson is recorded as a tension, never blended into the core. |
-| Compact clamped storage   | Principles are stored as short clamped rules, never raw model prose.        |
-| Comparative validation    | Validators agree on the decision field, never on byte-equality of prose.    |
-| Deterministic coherence   | Coherence is derived from the tension count, so every validator computes it identically. |
+- Only the owner may teach the agent or step in.
+- Contradictory rulings never auto-apply; they are quarantined and held for the owner.
+- Principles are stored as compact clamped rules, never raw model prose.
+- Validation is comparative on the load-bearing decision field, never byte-equality of model output.
 
-## 3. Contract interface
+## Contract
 
-Source: `contracts/UnderstudyContract.py`. Methods marked non-deterministic run
-an LLM leader function and a comparative validator function through
-`gl.vm.run_nondet_unsafe`.
+Source: `contracts/UnderstudyContract.py`. Non-deterministic methods run an LLM leader function and a comparative validator function through `gl.vm.run_nondet_unsafe`.
 
-| Method                                                              | Kind                      | Description                                                                                          |
-| ------------------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `boot(now_ms)`                                                      | write, owner-only         | Arms the understudy: records owner, created_at, coherence 100, empty core.                           |
-| `teach(situation, call, why, now_ms)`                              | write, owner-only, nondet | Reads the case against the principle set, agrees the relation (coheres / extends / contradicts), and synthesizes one compact rule. |
-| `submit_situation(text, now_ms)`                                   | write                     | Docks a new situation for the understudy to rule on. Open to any caller.                             |
-| `rule(situation_id, now_ms, tx_hash)`                              | write, nondet             | Proposes a ruling and verifies consistency with the principles. Consistent becomes canonical; contradictory is quarantined. |
-| `step_in(situation_id, decision, clarifying_rule, lock, now_ms)`   | write, owner-only         | Manual resolution of a quarantined situation, with an optional clarifying principle that becomes a facet. |
-| `get_summary()`                                                    | view                      | Owner, booted flag, created_at, coherence, and counts of principles, situations, rulings, tensions.  |
-| `get_core()`                                                       | view                      | The principle set: all facets, locked (load-bearing) facets, coherence, and recorded tensions.       |
-| `get_situations(offset, limit)`                                    | view                      | Paged situations, newest first.                                                                      |
-| `get_decisions(offset, limit)`                                     | view                      | Paged rulings, newest first.                                                                         |
-| `get_quarantine(offset, limit)`                                    | view                      | Rulings held in quarantine, awaiting owner step-in.                                                  |
+| Method | Kind | Description |
+| --- | --- | --- |
+| `boot(now_ms)` | write, owner-only | Arms the understudy: records owner, created_at, coherence 100, empty core. |
+| `teach(situation, call, why, now_ms)` | write, owner-only, nondet | Reads the case against the principle set, agrees the relation (coheres / extends / contradicts), and synthesizes one compact rule. |
+| `submit_situation(text, now_ms)` | write | Docks a new situation for the understudy to rule on. Open to any caller. |
+| `rule(situation_id, now_ms, tx_hash)` | write, nondet | Proposes a ruling and verifies consistency with the principles. Consistent becomes canonical; contradictory is quarantined. |
+| `step_in(situation_id, decision, clarifying_rule, lock, now_ms)` | write, owner-only | Manual resolution of a quarantined situation, with an optional clarifying principle that becomes a facet. |
+| `get_summary()` | view | Owner, booted flag, created_at, coherence, and counts of principles, situations, rulings, tensions. |
+| `get_core()` | view | The principle set: all facets, locked (load-bearing) facets, coherence, and recorded tensions. |
+| `get_situations(offset, limit)` | view | Paged situations, newest first. |
+| `get_decisions(offset, limit)` | view | Paged rulings, newest first. |
+| `get_quarantine(offset, limit)` | view | Rulings held in quarantine, awaiting owner step-in. |
 
-Field clamps (defense against unbounded or adversarial input): text 600, rule
-240, decision 400, note 240, hash 80, page 20. Bounds: 128 principles, 512
-situations. Error classification prefixes `[EXPECTED]` and `[LLM_ERROR]` let
-consensus agree on failure paths. Timestamps are supplied by the caller so
-every validator sees the same value.
-
-## 4. State machine
-
-A situation and its ruling advance through a fixed lifecycle. The frontend
-mirror lives in `src/utils/rulingState.ts`.
+## State machine
 
 ```
 docked -> scanning -> verifying -> accepted
                                 \-> quarantined -> resolved-by-owner
 ```
 
-| State              | Constant             | Meaning                                                              | Transition                                          |
-| ------------------ | -------------------- | -------------------------------------------------------------------- | --------------------------------------------------- |
-| `docked`           | `STATE_DOCKED`       | Situation submitted, awaiting a ruling.                              | `rule` begins the scan.                             |
-| `scanning`         | `STATE_SCANNING`     | Understudy proposes a ruling against the principles (leader phase).  | Proceeds to validator reproduction.                 |
-| `verifying`        | `STATE_VERIFYING`    | Validators independently reproduce the consistency verdict.          | Agreement resolves to accepted or quarantined.      |
-| `accepted`         | `STATE_ACCEPTED`     | Ruling verified consistent; it stands as a canonical action.         | Terminal.                                           |
-| `quarantined`      | `STATE_QUARANTINED`  | Ruling could not be verified consistent; held, never auto-applied.   | Owner `step_in` resolves it.                        |
-| `resolved-by-owner`| `STATE_RESOLVED`     | Owner stepped in and made the manual call.                           | Terminal.                                           |
+A situation docks, the understudy scans it against the principles, validators verify the consistency verdict, and the situation resolves to `accepted` or `quarantined`. A quarantined case is resolved by the owner stepping in. The canonical state is derived deterministically from the agreed consistency boolean, so validators never disagree on where a situation lands.
 
-The canonical state is derived deterministically from the agreed consistency
-boolean, so validators never disagree on where a situation lands.
+## Run locally
 
-## 5. Build and run
-
-Requirements: Node 18+ and Python 3 with the GenLayer tooling for contract
-checks. The console defaults to mock mode, so it runs fully offline with no
-wallet and no network.
+The console defaults to mock mode, so it runs fully offline with no wallet and no network.
 
 ```bash
 npm install
 npm run dev
 ```
-
-Open the dev server URL. The `MockAdapter` holds the same state the contract
-would and mirrors the chain outcome: a lesson that negates a locked rule is
-flagged as a tension, a situation that pushes against a locked principle is
-quarantined, everything else is accepted.
 
 Contract checks:
 
@@ -144,47 +89,22 @@ genvm-lint check contracts/UnderstudyContract.py --json
 python -m pytest tests/direct/ -p gltest_direct -q
 ```
 
-### Tech stack
+## Connecting a live contract
 
-| Layer            | Technology                        | Role                                                      |
-| ---------------- | --------------------------------- | --------------------------------------------------------- |
-| Framework        | Next.js 14 (static export)        | App shell; exported to static assets for Cloudflare Pages.|
-| Language         | TypeScript 5                      | Types across UI, store, and adapters.                     |
-| Styling          | Tailwind CSS 3                    | Utility styling for the instrument-dense console.         |
-| Motion           | Framer Motion 11                  | Panel transitions, gauge and facet animation.             |
-| State            | Zustand 4                         | Console store, single source of UI state.                 |
-| Chain client     | genlayer-js 1                     | Reads and writes against the Intelligent Contract.        |
-| Contract runtime | GenLayer (Python Intelligent Contract) | Principle set, rulings, consensus-verified state.    |
-| Hosting          | Cloudflare Pages                  | Serves the static export.                                 |
+The UI imports only the adapter interface, so switching from mock to a live contract is configuration only, not code. Set these in `.env.local`:
 
-## 6. Deployment
+```env
+NEXT_PUBLIC_UNDERSTUDY_MODE=contract
+NEXT_PUBLIC_UNDERSTUDY_CONTRACT=0x8C7Fe645E3017571e79592DF1beE6a7429f6b450
+NEXT_PUBLIC_UNDERSTUDY_NETWORK=bradbury
+```
 
-The UI imports only the adapter interface (`getAdapter()` in
-`src/lib/genlayer/index.ts`), so switching from mock to a live contract changes
-configuration only, not application code.
+| Environment variable | Purpose |
+| --- | --- |
+| `NEXT_PUBLIC_UNDERSTUDY_MODE` | `mock` (default) or `contract`. |
+| `NEXT_PUBLIC_UNDERSTUDY_CONTRACT` | Deployed contract address for contract mode. |
+| `NEXT_PUBLIC_UNDERSTUDY_NETWORK` | Target network; use `bradbury` for Testnet Bradbury. |
 
-1. Put a funded key in `.env.deploy` (gitignored):
-   `GENLAYER_PRIVATE_KEY=...` and `GENLAYER_NETWORK=bradbury`.
-2. Deploy: `node scripts/deploy.mjs`. The script records the address.
-3. Verify a live read: `node scripts/livecheck.mjs`.
-4. Set `.env.local` to point the frontend at the deployed contract:
+## Stack
 
-   ```env
-   NEXT_PUBLIC_UNDERSTUDY_MODE=contract
-   NEXT_PUBLIC_UNDERSTUDY_CONTRACT=0x8C7Fe645E3017571e79592DF1beE6a7429f6b450
-   NEXT_PUBLIC_UNDERSTUDY_NETWORK=bradbury
-   ```
-
-5. Rebuild. In contract mode the Key Switch connects MetaMask (with the GenLayer
-   Snap) if present, otherwise a browser burner key for gasless networks.
-
-| Environment variable               | Consumed by                     | Purpose                                              |
-| ---------------------------------- | ------------------------------- | ---------------------------------------------------- |
-| `NEXT_PUBLIC_UNDERSTUDY_MODE`      | `src/lib/genlayer/index.ts`     | `mock` (default) or `contract`.                      |
-| `NEXT_PUBLIC_UNDERSTUDY_CONTRACT`  | `src/lib/genlayer/index.ts`     | Deployed contract address for contract mode.         |
-| `NEXT_PUBLIC_UNDERSTUDY_NETWORK`   | `src/lib/genlayer/index.ts`     | Target network; use `bradbury` for Testnet Bradbury. |
-| `GENLAYER_PRIVATE_KEY`             | `scripts/deploy.mjs` (`.env.deploy`) | Funded deploy key. Never commit this value.     |
-| `GENLAYER_NETWORK`                 | `scripts/deploy.mjs` (`.env.deploy`) | Deploy-time network selector.                   |
-
-Never commit `.env.deploy` or any private key. The `.env.deploy` file is
-gitignored and must stay that way.
+Next.js 14, TypeScript, Tailwind CSS, Framer Motion, Zustand, and genlayer-js on the frontend. The contract is a Python GenVM Intelligent Contract on GenLayer Testnet Bradbury. Hosted on Cloudflare Pages.
