@@ -52,9 +52,29 @@ STATE_RESOLVED = "resolved-by-owner"
 MAX_TEXT = 600
 MAX_RULE = 240
 MAX_DECISION = 400
+MAX_ACTION = 240
 MAX_NOTE = 240
 MAX_HASH = 80
 PAGE_MAX = 20
+
+# Consensus tolerances (integer permille, 0..1000) for comparative validation of
+# the SUBSTANCE of committed text. Validators canonicalize the leader's rule and
+# decision and compare token overlap against their own independent rerun. This is
+# meaning-within-tolerance agreement, never byte-equality, never schema-only.
+RULE_SIM_MIN = 300      # 0.30 Jaccard overlap on canonical rule tokens
+DECISION_SIM_MIN = 250  # 0.25 Jaccard overlap on canonical decision tokens
+
+# Small function words dropped before canonicalizing so agreement tracks meaning,
+# not phrasing. Kept intentionally short and content-neutral.
+_STOPWORDS = frozenset(
+    {
+        "the", "a", "an", "to", "of", "and", "or", "for", "in", "on", "at",
+        "by", "with", "is", "are", "be", "it", "its", "this", "that", "these",
+        "those", "as", "from", "your", "you", "their", "them", "they", "if",
+        "then", "else", "do", "does", "will", "would", "should", "must", "can",
+        "may", "we", "i", "he", "she", "his", "her", "our", "but", "so",
+    }
+)
 
 # Bounds on the core so the agent cannot grow without limit.
 MAX_PRINCIPLES = 128
@@ -103,11 +123,63 @@ def _as_bool(value) -> bool:
     return s in ("true", "1", "yes", "consistent", "coheres")
 
 
+def _canon_tokens(text: str) -> list:
+    """Deterministically canonicalize free text into a sorted, de-duplicated bag
+    of meaning-bearing tokens. Lowercase, strip punctuation, drop stopwords and
+    very short tokens. Two validators running this on the same substance land on
+    the same canonical token set regardless of surface phrasing, so agreement is
+    on meaning, never on bytes."""
+    if text is None:
+        return []
+    s = str(text).lower()
+    cleaned = []
+    for ch in s:
+        if ch.isalnum():
+            cleaned.append(ch)
+        else:
+            cleaned.append(" ")
+    words = "".join(cleaned).split()
+    seen = {}
+    for w in words:
+        if len(w) < 3:
+            continue
+        if w in _STOPWORDS:
+            continue
+        seen[w] = True
+    return sorted(seen.keys())
+
+
+def _canon_text(text: str) -> str:
+    """A stable canonical string form of the substance, for storage/agreement."""
+    return " ".join(_canon_tokens(text))
+
+
+def _similarity_permille(a: str, b: str) -> int:
+    """Jaccard overlap of canonical token sets, scaled to 0..1000 (integer only;
+    GenVM calldata cannot serialize floats). Used to compare the MEANING of two
+    committed texts within tolerance."""
+    ta = set(_canon_tokens(a))
+    tb = set(_canon_tokens(b))
+    if not ta and not tb:
+        return 1000
+    if not ta or not tb:
+        return 0
+    inter = len(ta & tb)
+    union = len(ta | tb)
+    if union == 0:
+        return 1000
+    return (inter * 1000) // union
+
+
 @allow_storage
 @dataclass
 class Principle:
     id: str
     rule: str
+    # Canonical normalized form of the rule that validators agreed on (meaning
+    # within tolerance). The stored principle's substance is consensus-backed,
+    # not the leader's phrasing alone.
+    canonical: str
     locked: bool
     relation: str
     source_case_id: str
@@ -145,6 +217,38 @@ class Ruling:
     state: str
     created_at: u256
     tx_hash: str
+    # A concrete downstream action an accepted ruling authorizes, so an accepted
+    # ruling connects to a real effect and not merely a "consistent" label. Empty
+    # for quarantined rulings (nothing is authorized until the owner steps in).
+    action: str
+    # Id of the canonical Action record queued when this ruling was accepted, or
+    # empty for quarantined rulings. Links a ruling to its downstream effect.
+    action_id: str
+
+
+@allow_storage
+@dataclass
+class Action:
+    # A concrete downstream effect that an accepted, consensus-verified ruling
+    # authorizes on-chain. Recording it makes an accepted ruling DO something
+    # canonical (queue a real, inspectable, executable effect) rather than merely
+    # carrying a "consistent" label. The effect is queued for the owner's runtime
+    # to carry out; the contract never performs real value transfer itself.
+    id: str
+    ruling_id: str
+    situation_id: str
+    # The imperative effect text, canonicalized substance, and the exact decision
+    # text it was authorized by. All three are consensus-backed via the ruling
+    # that produced them.
+    effect: str
+    effect_canonical: str
+    authorized_by: str
+    status: str
+    created_at: u256
+
+
+# Lifecycle of a queued downstream action.
+ACTION_QUEUED = "queued"
 
 
 class UnderstudyContract(gl.Contract):
@@ -158,14 +262,18 @@ class UnderstudyContract(gl.Contract):
     situation_count: u256
     ruling_count: u256
 
+    action_count: u256
+
     principles: TreeMap[str, Principle]
     cases: TreeMap[str, Case]
     situations: TreeMap[str, Situation]
     rulings: TreeMap[str, Ruling]
+    actions: TreeMap[str, Action]
 
     principle_ids: DynArray[str]
     situation_ids: DynArray[str]
     ruling_ids: DynArray[str]
+    action_ids: DynArray[str]
     tensions: DynArray[str]
 
     def __init__(self):
@@ -177,6 +285,7 @@ class UnderstudyContract(gl.Contract):
         self.case_count = u256(0)
         self.situation_count = u256(0)
         self.ruling_count = u256(0)
+        self.action_count = u256(0)
 
     # -- helpers ----------------------------------------------------------
 
@@ -208,6 +317,7 @@ class UnderstudyContract(gl.Contract):
         return {
             "id": p.id,
             "rule": p.rule,
+            "canonical": p.canonical,
             "locked": bool(p.locked),
             "relation": p.relation,
             "sourceCaseId": p.source_case_id,
@@ -230,8 +340,22 @@ class UnderstudyContract(gl.Contract):
             "principlesUsed": self._load_list(r.principles_used_json),
             "consistent": bool(r.consistent),
             "state": r.state,
+            "action": r.action,
+            "actionId": r.action_id,
             "createdAt": int(r.created_at),
             "mockTxHash": r.tx_hash,
+        }
+
+    def _action_view(self, a: Action) -> dict:
+        return {
+            "id": a.id,
+            "rulingId": a.ruling_id,
+            "situationId": a.situation_id,
+            "effect": a.effect,
+            "canonical": a.effect_canonical,
+            "authorizedBy": a.authorized_by,
+            "status": a.status,
+            "createdAt": int(a.created_at),
         }
 
     def _principles_digest(self) -> str:
@@ -260,6 +384,7 @@ class UnderstudyContract(gl.Contract):
             "principles": int(self.principle_count),
             "situations": int(self.situation_count),
             "rulings": int(self.ruling_count),
+            "actions": int(self.action_count),
             "tensions": len(self.tensions),
         }
 
@@ -324,6 +449,23 @@ class UnderstudyContract(gl.Contract):
             if r is not None and r.state == STATE_QUARANTINED:
                 held.append(self._ruling_view(r))
         return held[offset : offset + limit]
+
+    @gl.public.view
+    def get_actions(self, offset: int = 0, limit: int = PAGE_MAX) -> list:
+        # Paged view of the concrete downstream actions queued by accepted,
+        # consensus-verified rulings. Newest first. Each entry is a real effect
+        # an accepted ruling authorized, not just a stored consistency label.
+        if limit <= 0 or limit > PAGE_MAX:
+            limit = PAGE_MAX
+        total = len(self.action_ids)
+        ordered = [self.action_ids[total - 1 - i] for i in range(total)]
+        page = ordered[offset : offset + limit]
+        out = []
+        for aid in page:
+            a = self.actions.get(str(aid))
+            if a is not None:
+                out.append(self._action_view(a))
+        return out
 
     # -- writes -----------------------------------------------------------
 
@@ -397,15 +539,22 @@ class UnderstudyContract(gl.Contract):
             return {
                 "relation": relation,
                 "rule": rule,
+                # Canonical normalized form committed alongside the rule so
+                # validators fence the exact substance that becomes canonical.
+                "canonical": _canon_text(rule),
                 "locked": _as_bool(data.get("locked", False)),
                 "tension": _clean(data.get("tension", ""), MAX_NOTE),
             }
 
         def validator_fn(leaders_res: gl.vm.Result) -> bool:
-            # Comparative validation: rerun the synthesis and agree on the
-            # load-bearing decision field, the relation. The exact rule wording
-            # may vary; the classification (and the contradiction boolean it
-            # implies) must match. Never byte-equality on model prose.
+            # Comparative validation over the committed SUBSTANCE, not the label.
+            # The validator reruns the synthesis and must agree on:
+            #   1. the relation classification (and the contradiction boolean), and
+            #   2. the MEANING of the compact rule text the leader wants to store,
+            #      compared by canonical token overlap within tolerance.
+            # This fences the exact rule that becomes canonical, so the stored
+            # principle is consensus-backed, not the leader's phrasing alone.
+            # Never byte-equality on prose, never a schema-only "a dict came back".
             if not isinstance(leaders_res, gl.vm.Return):
                 return False
             try:
@@ -413,6 +562,8 @@ class UnderstudyContract(gl.Contract):
             except gl.vm.UserError:
                 return False
             theirs = leaders_res.calldata
+            if not isinstance(theirs, dict):
+                return False
             their_rel = _normalize_relation(theirs.get("relation", ""), "")
             if their_rel not in VALID_RELATIONS:
                 return False
@@ -422,12 +573,26 @@ class UnderstudyContract(gl.Contract):
             # silently blends a conflicting lesson.
             if (mine["relation"] == REL_CONTRADICTS) != (their_rel == REL_CONTRADICTS):
                 return False
+            # Agree on the substance of the rule that will be stored. The leader
+            # commits both the rule and its canonical form; the validator checks
+            # the canonical form actually matches the committed rule (no smuggling
+            # a mismatched canonical) and that the rule's meaning is close enough
+            # to the validator's own independently synthesized rule.
+            their_rule = _clean(theirs.get("rule", ""), MAX_RULE)
+            if not their_rule:
+                return False
+            their_canonical = str(theirs.get("canonical", ""))
+            if their_canonical != _canon_text(their_rule):
+                return False
+            if _similarity_permille(their_rule, mine["rule"]) < RULE_SIM_MIN:
+                return False
             return True
 
         agreed = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
         relation = _normalize_relation(agreed.get("relation", REL_EXTENDS), REL_EXTENDS)
         rule = _clean(agreed.get("rule", ""), MAX_RULE) or "Hold to the owner's stated judgment."
+        canonical = _canon_text(rule)
         locked = _as_bool(agreed.get("locked", False))
         tension_note = _clean(agreed.get("tension", ""), MAX_NOTE)
 
@@ -470,6 +635,7 @@ class UnderstudyContract(gl.Contract):
         self.principles[principle_id] = Principle(
             id=principle_id,
             rule=rule,
+            canonical=canonical,
             locked=locked,
             relation=relation,
             source_case_id=case_id,
@@ -523,8 +689,8 @@ class UnderstudyContract(gl.Contract):
 
         prompt = (
             "You are an understudy agent that must rule on a situation strictly within "
-            "your owner's principles. Propose a ruling, then judge whether it is "
-            "consistent with the principles.\n\n"
+            "your owner's principles. Propose a ruling, judge whether it is consistent "
+            "with the principles, and name the concrete downstream action it authorizes.\n\n"
             "OWNER PRINCIPLES:\n" + digest + "\n\n"
             "SITUATION:\n" + situation_text + "\n\n"
             "Rules:\n"
@@ -534,14 +700,19 @@ class UnderstudyContract(gl.Contract):
             "- consistent is true only when the decision stays within every locked principle.\n"
             "- If the only defensible decision would break a locked principle, set consistent "
             "to false; do not bend the principle to fit.\n"
-            "- principles_used lists the rules (verbatim short text) the decision relies on.\n\n"
+            "- principles_used lists the rules (verbatim short text) the decision relies on.\n"
+            "- action is the single concrete downstream step this ruling authorizes when "
+            "accepted (an imperative like 'grant the extension' or 'issue the refund'), so the "
+            "ruling connects to a real effect. When consistent is false, action must be an "
+            "empty string because nothing may be authorized.\n\n"
             'Return strict JSON: {"decision": "<call>", "consistent": <bool>, '
-            '"principles_used": [<strings>]}'
+            '"principles_used": [<strings>], "action": "<downstream action or empty>"}'
         )
 
         def leader_fn() -> dict:
-            # GenLayer non-deterministic call: the understudy proposes a ruling
-            # and self-assesses consistency. Validators reproduce both.
+            # GenLayer non-deterministic call: the understudy proposes a ruling,
+            # self-assesses consistency, and names the downstream action.
+            # Validators reproduce all of it.
             raw = gl.nondet.exec_prompt(prompt, response_format="json")
             data = _parse_json(raw)
             decision = _clean(data.get("decision", ""), MAX_DECISION)
@@ -551,17 +722,34 @@ class UnderstudyContract(gl.Contract):
             if not isinstance(used, list):
                 used = []
             used = [_clean(u, MAX_RULE) for u in used if _clean(u, MAX_RULE)]
+            consistent = _as_bool(data.get("consistent", False))
+            action = _clean(data.get("action", ""), MAX_ACTION)
+            # A consistent ruling must authorize a concrete action; an
+            # inconsistent one authorizes nothing.
+            if not consistent:
+                action = ""
             return {
                 "decision": decision,
-                "consistent": _as_bool(data.get("consistent", False)),
+                "consistent": consistent,
                 "principles_used": used,
+                "action": action,
+                "decision_canonical": _canon_text(decision),
             }
 
+        # Canonical token set of the whole principle set, used to check that a
+        # decision claimed consistent is actually grounded in the principles.
+        principles_canonical = _canon_text(digest)
+
         def validator_fn(leaders_res: gl.vm.Result) -> bool:
-            # Comparative validation: rerun the reasoning and agree on the
-            # consistency boolean, the load-bearing outcome. A ruling is
-            # canonical only when validators independently agree it is
-            # consistent with the principles. Never byte-equality on the prose.
+            # Comparative validation over committed SUBSTANCE. The validator
+            # reruns the reasoning and must agree on:
+            #   1. the consistency verdict (the load-bearing outcome),
+            #   2. the MEANING of the decision text that becomes canonical
+            #      (canonical token overlap within tolerance), and
+            #   3. that a ruling claimed consistent is actually grounded in the
+            #      owner's principle set. A decision whose text bears no relation
+            #      to the principles is rejected (disagree) rather than accepted.
+            # Never byte-equality, never a schema-only "a dict was returned".
             if not isinstance(leaders_res, gl.vm.Return):
                 return False
             try:
@@ -569,7 +757,30 @@ class UnderstudyContract(gl.Contract):
             except gl.vm.UserError:
                 return False
             theirs = leaders_res.calldata
-            return bool(mine["consistent"]) == _as_bool(theirs.get("consistent", False))
+            if not isinstance(theirs, dict):
+                return False
+            their_consistent = _as_bool(theirs.get("consistent", False))
+            if bool(mine["consistent"]) != their_consistent:
+                return False
+            their_decision = _clean(theirs.get("decision", ""), MAX_DECISION)
+            if not their_decision:
+                return False
+            # Guard against a mismatched canonical being smuggled in.
+            their_dcanon = str(theirs.get("decision_canonical", ""))
+            if their_dcanon != _canon_text(their_decision):
+                return False
+            # Agree on the decision's substance within tolerance.
+            if _similarity_permille(their_decision, mine["decision"]) < DECISION_SIM_MIN:
+                return False
+            if their_consistent:
+                # A consistent ruling must authorize a concrete downstream action
+                # and its decision text must be grounded in the principle set.
+                their_action = _clean(theirs.get("action", ""), MAX_ACTION)
+                if not their_action:
+                    return False
+                if _similarity_permille(their_decision, principles_canonical) <= 0:
+                    return False
+            return True
 
         agreed = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
@@ -579,14 +790,45 @@ class UnderstudyContract(gl.Contract):
         if not isinstance(used, list):
             used = []
         used = [_clean(u, MAX_RULE) for u in used if _clean(u, MAX_RULE)]
+        action = _clean(agreed.get("action", ""), MAX_ACTION)
 
         # Derive the canonical state deterministically from the agreed
         # consistency boolean. Consistent rulings become canonical actions;
         # contradictory ones are quarantined and never auto-applied.
         final_state = STATE_ACCEPTED if consistent else STATE_QUARANTINED
+        # Deterministic guard: only an accepted ruling carries a downstream
+        # action; a quarantined ruling authorizes nothing until the owner steps in.
+        if not consistent:
+            action = ""
 
+        created = u256(int(now_ms) if int(now_ms) > 0 else 0)
         index = int(self.ruling_count)
         ruling_id = "ruling_" + str(index)
+
+        # Connect an accepted ruling to a CONCRETE DOWNSTREAM ACTION. When (and
+        # only when) validators agreed the ruling is consistent, we queue a
+        # canonical Action record: a real, inspectable effect the accepted ruling
+        # authorizes. This makes an accepted ruling DO something on-chain instead
+        # of just carrying a "consistent" label. Quarantined rulings queue no
+        # action. The effect and its canonical substance are consensus-backed via
+        # the ruling that produced them; the contract never moves real value.
+        action_id = ""
+        if consistent and action:
+            a_index = int(self.action_count)
+            action_id = "action_" + str(a_index)
+            self.actions[action_id] = Action(
+                id=action_id,
+                ruling_id=ruling_id,
+                situation_id=situation_id,
+                effect=action,
+                effect_canonical=_canon_text(action),
+                authorized_by=decision,
+                status=ACTION_QUEUED,
+                created_at=created,
+            )
+            self.action_ids.append(action_id)
+            self.action_count = u256(a_index + 1)
+
         self.rulings[ruling_id] = Ruling(
             id=ruling_id,
             situation_id=situation_id,
@@ -594,8 +836,10 @@ class UnderstudyContract(gl.Contract):
             principles_used_json=json.dumps(used),
             consistent=consistent,
             state=final_state,
-            created_at=u256(int(now_ms) if int(now_ms) > 0 else 0),
+            created_at=created,
             tx_hash=_clean(tx_hash, MAX_HASH),
+            action=action,
+            action_id=action_id,
         )
         self.ruling_ids.append(ruling_id)
         self.ruling_count = u256(index + 1)
@@ -614,6 +858,8 @@ class UnderstudyContract(gl.Contract):
             "consistent": consistent,
             "state": final_state,
             "principlesUsed": used,
+            "action": action,
+            "actionId": action_id,
             "note": note,
         }
 
@@ -675,6 +921,7 @@ class UnderstudyContract(gl.Contract):
             self.principles[new_principle_id] = Principle(
                 id=new_principle_id,
                 rule=rule_clean,
+                canonical=_canon_text(rule_clean),
                 locked=_as_bool(lock),
                 relation=REL_EXTENDS,
                 source_case_id=case_id,

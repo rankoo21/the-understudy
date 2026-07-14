@@ -26,6 +26,9 @@ export interface MockRuling {
   consistent: boolean;
   principlesUsed: string[];
   state: RulingState;
+  // Concrete downstream action an accepted ruling authorizes (empty when
+  // quarantined). Mirrors the contract's consensus-backed action field.
+  action: string;
   note: string;
 }
 
@@ -44,6 +47,7 @@ export function decideRuling(situationText: string, principles: Principle[]): Mo
       consistent: false,
       principlesUsed: violated ? [violated.rule] : [],
       state: "quarantined",
+      action: "",
       note: "The understudy could not be verified. Held in quarantine.",
     };
   }
@@ -55,8 +59,17 @@ export function decideRuling(situationText: string, principles: Principle[]): Mo
     consistent: true,
     principlesUsed: used,
     state: "accepted",
+    action: draftAction(text),
     note: "Consistent with your principles. The ruling stands as a canonical action.",
   };
+}
+
+// The concrete downstream step an accepted ruling authorizes.
+function draftAction(text: string): string {
+  if (text.includes("extension")) return "grant the deadline extension";
+  if (text.includes("refund")) return "issue the refund";
+  if (text.includes("access") || text.includes("permission")) return "grant scoped access";
+  return "apply the owner's stated call";
 }
 
 function draftDecision(text: string, used: string[]): string {

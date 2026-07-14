@@ -118,6 +118,9 @@ export function SituationCartridge({
                 value={ruling.consistent ? "Consistent with your principles" : "Contradicts a locked principle"}
                 tone={ruling.consistent ? "cyan" : "amber"}
               />
+              {ruling.consistent && ruling.action ? (
+                <Plate label="Downstream action authorized" value={ruling.action} tone="cyan" />
+              ) : null}
             </>
           ) : (
             <EtchLabel className="text-instrument-steel">No ruling formed yet.</EtchLabel>

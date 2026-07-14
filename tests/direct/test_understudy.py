@@ -6,6 +6,8 @@ from conftest import (
     teach_contradicts_response,
     rule_consistent_response,
     rule_contradictory_response,
+    rule_offtopic_consistent_response,
+    canon_text,
 )
 
 
@@ -326,3 +328,268 @@ def test_get_decisions_newest_first(deploy, direct_vm):
     decisions = deploy.get_decisions(0, 20)
     assert len(decisions) == 2
     assert decisions[0]["situationId"] == s2
+
+
+# ---------------------------------------------------------------------------
+# ISSUE 1: canonical outputs are consensus-backed, not the leader's alone.
+#
+# In direct mode gl.vm.run_nondet_unsafe runs only the leader and captures the
+# validator. We drive the captured validator via direct_vm.run_validator() to
+# prove validators judge the SUBSTANCE of the committed rule/decision text and
+# the consistency verdict, disagreeing when the substance does not hold.
+# ---------------------------------------------------------------------------
+
+def test_teach_stores_consensus_agreed_canonical_rule(deploy, direct_vm):
+    # The stored principle carries a canonical normalized form of the rule, and
+    # that canonical form is exactly what the consensus algorithm produces.
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    core = deploy.get_core()
+    p = core["principles"][0]
+    assert p["canonical"] == canon_text(p["rule"])
+    assert p["canonical"] != ""
+
+    # And a validator rerun on the same substance agrees: the exact stored rule
+    # is consensus-backed, not the leader's phrasing alone.
+    assert direct_vm.run_validator() is True
+
+
+def test_teach_validator_rejects_divergent_rule_substance(deploy, direct_vm):
+    # A leader that commits a rule whose MEANING diverges from the validator's
+    # independent synthesis is rejected, so a rogue leader cannot make its own
+    # rule text canonical.
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    divergent_rule = "Repaint the office lobby a calming shade of blue every spring."
+    leader_claim = {
+        "relation": "coheres",
+        "rule": divergent_rule,
+        "canonical": canon_text(divergent_rule),
+        "locked": True,
+        "tension": "",
+    }
+    # The validator reruns the leader against the same mock (the grant-extension
+    # rule) and compares substance; the divergent rule fails the tolerance.
+    assert direct_vm.run_validator(leader_result=leader_claim) is False
+
+
+def test_teach_validator_rejects_mismatched_canonical(deploy, direct_vm):
+    # A leader cannot smuggle a canonical form that does not match its own rule.
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    rule = "Grant a first deadline extension without questions."
+    leader_claim = {
+        "relation": "coheres",
+        "rule": rule,
+        "canonical": "totally unrelated canonical tokens",
+        "locked": True,
+        "tension": "",
+    }
+    assert direct_vm.run_validator(leader_result=leader_claim) is False
+
+
+def test_rule_accepted_ruling_carries_downstream_action(deploy, direct_vm):
+    # An accepted ruling records a concrete downstream action it authorizes, so
+    # acceptance connects to a real effect and not just a "consistent" label.
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    sid = deploy.submit_situation(
+        "A contributor who never missed a deadline asks for one extension.", 3000
+    )
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(r".*", rule_consistent_response())
+    result = deploy.rule(sid, 4000, "0xabc123")
+    assert result["consistent"] is True
+    assert result["state"] == "accepted"
+    assert result["action"] != ""
+
+    decisions = deploy.get_decisions(0, 20)
+    assert decisions[0]["action"] == result["action"]
+
+    # The consensus validator agrees this grounded, action-bearing ruling stands.
+    assert direct_vm.run_validator() is True
+
+
+def test_accepted_ruling_creates_downstream_action_record(deploy, direct_vm):
+    # A CONCRETE DOWNSTREAM ACTION: an accepted ruling queues a canonical Action
+    # record on-chain, linked back to the ruling, so acceptance does something
+    # real rather than only storing a "consistent" label.
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    sid = deploy.submit_situation(
+        "A contributor who never missed a deadline asks for one extension.", 3000
+    )
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(r".*", rule_consistent_response())
+    result = deploy.rule(sid, 4000, "0xabc123")
+    assert result["consistent"] is True
+    assert result["actionId"] != ""
+
+    # The action collection has exactly one queued, inspectable effect.
+    actions = deploy.get_actions(0, 20)
+    assert len(actions) == 1
+    a = actions[0]
+    assert a["id"] == result["actionId"]
+    assert a["rulingId"] == result["rulingId"]
+    assert a["situationId"] == sid
+    assert a["effect"] == result["action"]
+    assert a["status"] == "queued"
+    assert a["authorizedBy"] == result["decision"]
+
+    # The ruling links back to its downstream action.
+    decisions = deploy.get_decisions(0, 20)
+    assert decisions[0]["actionId"] == a["id"]
+
+    # The summary counts the queued action.
+    summary = deploy.get_summary()
+    assert summary["actions"] == 1
+
+
+def test_quarantined_ruling_creates_no_action_record(deploy, direct_vm):
+    # A quarantined ruling queues no downstream action: nothing is authorized
+    # until the owner steps in.
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    sid = deploy.submit_situation(
+        "A contributor asks for an extension and the understudy wants to penalize them.", 3000
+    )
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(r".*", rule_contradictory_response())
+    result = deploy.rule(sid, 4000)
+    assert result["consistent"] is False
+    assert result["actionId"] == ""
+
+    actions = deploy.get_actions(0, 20)
+    assert len(actions) == 0
+    summary = deploy.get_summary()
+    assert summary["actions"] == 0
+
+
+def test_rule_quarantined_ruling_authorizes_no_action(deploy, direct_vm):
+    # A quarantined ruling authorizes nothing until the owner steps in.
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    sid = deploy.submit_situation(
+        "A contributor asks for an extension and the understudy wants to penalize them.", 3000
+    )
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(r".*", rule_contradictory_response())
+    result = deploy.rule(sid, 4000)
+    assert result["consistent"] is False
+    assert result["state"] == "quarantined"
+    assert result["action"] == ""
+
+    quarantine = deploy.get_quarantine(0, 20)
+    assert quarantine[0]["action"] == ""
+
+
+def test_rule_validator_rejects_decision_ungrounded_in_principles(deploy, direct_vm):
+    # A ruling whose decision text is not consistent with (not grounded in) the
+    # principle set is rejected by validators even if it claims consistent=true.
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    sid = deploy.submit_situation("A contributor asks for one extension.", 3000)
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(r".*", rule_offtopic_consistent_response())
+    deploy.rule(sid, 4000)
+    # The captured validator reruns the same off-topic leader: its decision text
+    # shares no substance with the owner's principles, so it disagrees.
+    assert direct_vm.run_validator() is False
+
+
+def test_rule_validator_rejects_consistency_verdict_mismatch(deploy, direct_vm):
+    # If the leader claims a ruling is consistent but the validator's independent
+    # rerun finds it contradictory, the validator disagrees. The consistency
+    # verdict that becomes canonical must itself be consensus-backed.
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    sid = deploy.submit_situation("A contributor asks for one extension.", 3000)
+    direct_vm.clear_mocks()
+    # The live model (what the validator reruns) says the ruling is contradictory.
+    direct_vm.mock_llm(r".*", rule_contradictory_response())
+    deploy.rule(sid, 4000)
+    # A leader that instead committed "consistent: true" with an authorized action
+    # is rejected because the validator's rerun verdict is "consistent: false".
+    leader_claim = {
+        "decision": "Refuse the request outright and penalize them.",
+        "consistent": True,
+        "principles_used": ["Grant a first deadline extension without questions."],
+        "action": "penalize the contributor",
+        "decision_canonical": canon_text("Refuse the request outright and penalize them."),
+    }
+    assert direct_vm.run_validator(leader_result=leader_claim) is False
+
+
+def test_rule_validator_agrees_on_canonical_decision(deploy, direct_vm):
+    # The canonical stored decision is the consensus-agreed one: a validator
+    # rerun on the same substance agrees.
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    sid = deploy.submit_situation(
+        "A contributor who never missed a deadline asks for one extension.", 3000
+    )
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(r".*", rule_consistent_response())
+    result = deploy.rule(sid, 4000)
+    # A paraphrase of the same decision (same substance, different words) still
+    # agrees within tolerance, proving meaning-based (not byte-equal) consensus.
+    paraphrase = "Grant the extension one time without questions because no prior deadline was missed."
+    leader_claim = {
+        "decision": paraphrase,
+        "consistent": True,
+        "principles_used": ["Grant a first deadline extension without questions."],
+        "action": "grant the deadline extension",
+        "decision_canonical": canon_text(paraphrase),
+    }
+    assert direct_vm.run_validator(leader_result=leader_claim) is True
+    assert result["consistent"] is True

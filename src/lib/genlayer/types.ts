@@ -17,6 +17,9 @@ export type RulingState =
 export interface Principle {
   id: string;
   rule: string;
+  // Canonical normalized form of the rule that validators agreed on. The
+  // stored substance is consensus-backed, not the leader's phrasing alone.
+  canonical?: string;
   locked: boolean;
   relation: Relation;
   sourceCaseId: string;
@@ -46,8 +49,30 @@ export interface Ruling {
   principlesUsed: string[];
   consistent: boolean;
   state: RulingState;
+  // Concrete downstream action an accepted ruling authorizes. Empty for
+  // quarantined rulings (nothing is authorized until the owner steps in).
+  action: string;
+  // Id of the queued downstream Action record for an accepted ruling, or empty.
+  actionId?: string;
   createdAt: number;
   mockTxHash: string;
+}
+
+// A concrete downstream effect queued by an accepted, consensus-verified
+// ruling. Recording it makes an accepted ruling DO something canonical on-chain
+// (a real, inspectable effect the owner's runtime can carry out) rather than
+// only carrying a "consistent" label.
+export interface ActionRecord {
+  id: string;
+  rulingId: string;
+  situationId: string;
+  // Imperative effect text, its canonical substance, and the decision text that
+  // authorized it. All consensus-backed via the ruling that produced them.
+  effect: string;
+  canonical: string;
+  authorizedBy: string;
+  status: string;
+  createdAt: number;
 }
 
 // The grown logic core: principles, locked principles, coherence, tensions.
@@ -68,6 +93,7 @@ export interface Summary {
   principles: number;
   situations: number;
   rulings: number;
+  actions: number;
   tensions: number;
 }
 
@@ -91,6 +117,11 @@ export interface RuleResult {
   consistent: boolean;
   state: RulingState;
   principlesUsed: string[];
+  // Concrete downstream action an accepted ruling authorizes (empty when
+  // quarantined).
+  action: string;
+  // Id of the queued downstream Action record for an accepted ruling, or empty.
+  actionId?: string;
   note: string;
 }
 
@@ -142,4 +173,5 @@ export interface UnderstudyAdapter {
   getSituations(): Promise<Situation[]>;
   getDecisions(): Promise<Ruling[]>;
   getQuarantine(): Promise<Ruling[]>;
+  getActions(): Promise<ActionRecord[]>;
 }

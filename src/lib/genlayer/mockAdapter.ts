@@ -1,4 +1,5 @@
 import type {
+  ActionRecord,
   Core,
   Principle,
   Ruling,
@@ -29,9 +30,29 @@ class MockStore {
   situationIds: string[] = [];
   rulings = new Map<string, Ruling>();
   rulingIds: string[] = [];
+  actions = new Map<string, ActionRecord>();
+  actionIds: string[] = [];
   tensions: string[] = [];
   caseCount = 0;
   seeded = false;
+}
+
+// Canonicalization mirror of the contract's _canon_text, so the mock's action
+// records carry the same canonical substance the chain would compute.
+const CANON_STOPWORDS = new Set(
+  "the a an to of and or for in on at by with is are be it its this that these those as from your you their them they if then else do does will would should must can may we i he she his her our but so".split(
+    " ",
+  ),
+);
+
+function canonText(text: string): string {
+  if (!text) return "";
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((w) => w.length >= 3 && !CANON_STOPWORDS.has(w));
+  return Array.from(new Set(words)).sort().join(" ");
 }
 
 const store = new MockStore();
@@ -201,9 +222,30 @@ export class MockAdapter implements UnderstudyAdapter {
       principlesUsed: decision.principlesUsed,
       consistent: decision.consistent,
       state: decision.state,
+      action: decision.action,
       createdAt: Date.now(),
       mockTxHash: mockTxHash(),
     };
+    // Connect an accepted ruling to a concrete downstream action record, exactly
+    // as the contract queues a canonical Action for a consensus-verified ruling.
+    let actionId = "";
+    if (decision.consistent && decision.action) {
+      actionId = `action_${store.actionIds.length}`;
+      const action: ActionRecord = {
+        id: actionId,
+        rulingId: id,
+        situationId,
+        effect: decision.action,
+        canonical: canonText(decision.action),
+        authorizedBy: decision.decision,
+        status: "queued",
+        createdAt: Date.now(),
+      };
+      store.actions.set(actionId, action);
+      store.actionIds.push(actionId);
+    }
+    ruling.actionId = actionId;
+
     store.rulings.set(id, ruling);
     store.rulingIds.push(id);
     sit.state = decision.state;
@@ -215,6 +257,8 @@ export class MockAdapter implements UnderstudyAdapter {
       consistent: decision.consistent,
       state: decision.state,
       principlesUsed: decision.principlesUsed,
+      action: decision.action,
+      actionId,
       note: decision.note,
     });
   }
@@ -279,6 +323,7 @@ export class MockAdapter implements UnderstudyAdapter {
         principles: store.principleIds.length,
         situations: store.situationIds.length,
         rulings: store.rulingIds.length,
+        actions: store.actionIds.length,
         tensions: store.tensions.length,
       },
       60,
@@ -320,6 +365,14 @@ export class MockAdapter implements UnderstudyAdapter {
     const list = store.rulingIds
       .map((id) => store.rulings.get(id))
       .filter((r): r is Ruling => Boolean(r) && r!.state === "quarantined")
+      .sort((a, b) => b.createdAt - a.createdAt);
+    return delay(list, 60);
+  }
+
+  async getActions(): Promise<ActionRecord[]> {
+    const list = store.actionIds
+      .map((id) => store.actions.get(id))
+      .filter((a): a is ActionRecord => Boolean(a))
       .sort((a, b) => b.createdAt - a.createdAt);
     return delay(list, 60);
   }

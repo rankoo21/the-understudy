@@ -1,7 +1,9 @@
-// Confirms reads work with no wallet: an account-less read-only client calling
-// get_summary against the deployed studionet contract from .env.local.
+// Confirms reads work with no wallet: a read-only client that carries a
+// throwaway ephemeral account (never funded, never signs) calling get_summary
+// against the deployed contract from .env.local. This mirrors the frontend
+// adapter fix so genlayer-js never throws "No account set" on a read.
 import { readFileSync } from "node:fs";
-import { createClient } from "genlayer-js";
+import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
 import { studionet, testnetBradbury, localnet } from "genlayer-js/chains";
 
 function readEnv(path) {
@@ -37,8 +39,9 @@ if (!address) {
   process.exit(1);
 }
 
-// No account attached: this is the read-only path a wallet-less visitor uses.
-const client = createClient({ chain: pickChain(network) });
+// Read-only path a wallet-less visitor uses: an ephemeral throwaway account is
+// attached so the client always has an account for gasless reads.
+const client = createClient({ chain: pickChain(network), account: createAccount(generatePrivateKey()) });
 
 const raw = await client.readContract({ address, functionName: "get_summary", args: [] });
 

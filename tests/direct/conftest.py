@@ -59,12 +59,18 @@ def teach_contradicts_response() -> str:
     )
 
 
-def rule_consistent_response(decision: str = "Grant the extension once, no questions.") -> str:
+def rule_consistent_response(
+    decision: str = "Grant the extension once without questions, since no deadline was missed before.",
+    action: str = "grant the deadline extension",
+) -> str:
+    # A grounded, consistent ruling: the decision shares substance with the
+    # stored principle set, and it authorizes a concrete downstream action.
     return json.dumps(
         {
             "decision": decision,
             "consistent": True,
             "principles_used": ["Grant a first deadline extension without questions."],
+            "action": action,
         }
     )
 
@@ -75,8 +81,63 @@ def rule_contradictory_response(decision: str = "Refuse the request outright and
             "decision": decision,
             "consistent": False,
             "principles_used": ["Grant a first deadline extension without questions."],
+            "action": "",
         }
     )
+
+
+def rule_offtopic_consistent_response() -> str:
+    """A ruling that claims to be consistent but whose decision text is not
+    grounded in the principle set at all (zero overlap). A validator that judges
+    the SUBSTANCE of the decision must reject this even though consistent=true."""
+    return json.dumps(
+        {
+            "decision": "Buy a fleet of delivery trucks and repaint the lobby.",
+            "consistent": True,
+            "principles_used": ["Grant a first deadline extension without questions."],
+            "action": "purchase trucks",
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Canonicalization mirror.
+#
+# These mirror the contract's _canon_tokens / _canon_text exactly so tests can
+# assert that the stored canonical form (the consensus-agreed substance) matches
+# the algorithm the validators run. If the contract's canonicalizer changes,
+# this mirror must change with it.
+# ---------------------------------------------------------------------------
+
+_STOPWORDS = frozenset(
+    {
+        "the", "a", "an", "to", "of", "and", "or", "for", "in", "on", "at",
+        "by", "with", "is", "are", "be", "it", "its", "this", "that", "these",
+        "those", "as", "from", "your", "you", "their", "them", "they", "if",
+        "then", "else", "do", "does", "will", "would", "should", "must", "can",
+        "may", "we", "i", "he", "she", "his", "her", "our", "but", "so",
+    }
+)
+
+
+def canon_tokens(text: str) -> list:
+    if text is None:
+        return []
+    s = str(text).lower()
+    cleaned = []
+    for ch in s:
+        cleaned.append(ch if ch.isalnum() else " ")
+    words = "".join(cleaned).split()
+    seen = {}
+    for w in words:
+        if len(w) < 3 or w in _STOPWORDS:
+            continue
+        seen[w] = True
+    return sorted(seen.keys())
+
+
+def canon_text(text: str) -> str:
+    return " ".join(canon_tokens(text))
 
 
 @pytest.fixture

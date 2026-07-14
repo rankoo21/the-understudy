@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { getAdapter } from "@/lib/genlayer";
 import type {
+  ActionRecord,
   Core,
   Ruling,
   RuleResult,
@@ -57,6 +58,7 @@ interface ConsoleState {
   situations: Situation[];
   decisions: Ruling[];
   quarantine: Ruling[];
+  actions: ActionRecord[];
 
   busy: boolean;
   error: string | null;
@@ -133,6 +135,7 @@ export const useConsoleStore = create<ConsoleState>((set, get) => ({
   situations: [],
   decisions: [],
   quarantine: [],
+  actions: [],
 
   busy: false,
   error: null,
@@ -147,13 +150,14 @@ export const useConsoleStore = create<ConsoleState>((set, get) => ({
   scanningId: null,
 
   refresh: async () => {
-    const [core, situations, decisions, quarantine] = await Promise.all([
+    const [core, situations, decisions, quarantine, actions] = await Promise.all([
       adapter.getCore(),
       adapter.getSituations(),
       adapter.getDecisions(),
       adapter.getQuarantine(),
+      adapter.getActions(),
     ]);
-    set({ core, situations, decisions, quarantine });
+    set({ core, situations, decisions, quarantine, actions });
   },
 
   boot: async () => {

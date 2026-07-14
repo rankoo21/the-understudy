@@ -31,6 +31,7 @@ function download(name: string, content: string, type: string) {
 export function TelemetryLog() {
   const decisions = useConsoleStore((s) => s.decisions);
   const situations = useConsoleStore((s) => s.situations);
+  const actions = useConsoleStore((s) => s.actions);
   const setNotice = useConsoleStore.getState().firePulse; // reuse pulse for feedback
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -51,6 +52,7 @@ export function TelemetryLog() {
       lines.push(`- Ruling: ${r.decision}`);
       lines.push(`- Principles used: ${r.principlesUsed.join("; ") || "none"}`);
       lines.push(`- Consistent: ${r.consistent ? "yes" : "no"}`);
+      lines.push(`- Downstream action: ${r.action || "none"}`);
       lines.push(`- Mock tx: ${r.mockTxHash}`);
       lines.push("");
     }
@@ -83,6 +85,38 @@ export function TelemetryLog() {
             Print the line
           </MachineButton>
         </div>
+      </MachinedPanel>
+
+      <MachinedPanel
+        title="Authorized actions"
+        code="EFFECT QUEUE"
+        led={actions.length ? "cyan" : "off"}
+      >
+        <EtchLabel className="mb-2 block text-instrument-steel">
+          Concrete downstream effects each accepted, consensus-verified ruling authorized on-chain.
+        </EtchLabel>
+        {actions.length === 0 ? (
+          <EtchLabel className="text-instrument-steel">
+            No actions queued. An accepted ruling authorizes one concrete effect.
+          </EtchLabel>
+        ) : (
+          <div className="machined-inset bg-console-black/60 p-2">
+            <ul className="divide-y divide-instrument-label/10">
+              {actions.map((a) => (
+                <li key={a.id} className="flex items-center gap-2 px-2 py-1">
+                  <span className="inline-block h-1.5 w-1.5 led-cyan" />
+                  <span className="w-24 shrink-0 font-mono text-[11px] text-instrument-steel">
+                    {a.id.toUpperCase()}
+                  </span>
+                  <span className="flex-1 truncate text-sm text-cyan">{a.effect}</span>
+                  <span className="shrink-0 font-mono text-[10px] uppercase text-instrument-steel">
+                    {a.status} . {a.rulingId}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </MachinedPanel>
 
       <MachinedPanel title="Instrument log" code="MONO OUT">
@@ -125,6 +159,11 @@ export function TelemetryLog() {
                           label="Result"
                           value={r.consistent ? "Accepted . consistent with principles" : "Quarantined . contradiction held"}
                           tone={r.consistent ? "cyan" : "amber"}
+                        />
+                        <Record
+                          label="Downstream action"
+                          value={r.action ? `${r.action}${r.actionId ? `  (${r.actionId})` : ""}` : "none"}
+                          tone={r.action ? "cyan" : "neutral"}
                         />
                         <Record label="Mock tx id" value={r.mockTxHash} />
                       </motion.div>

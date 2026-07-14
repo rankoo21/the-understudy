@@ -1,7 +1,8 @@
-import { createClient } from "genlayer-js";
+import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
 import { studionet, testnetBradbury, localnet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 import type {
+  ActionRecord,
   Core,
   Ruling,
   RuleResult,
@@ -22,11 +23,16 @@ import type {
 //   2. Set NEXT_PUBLIC_UNDERSTUDY_MODE=contract and NEXT_PUBLIC_UNDERSTUDY_CONTRACT=0x...
 //   3. Optionally set NEXT_PUBLIC_UNDERSTUDY_NETWORK (studionet | bradbury | localnet).
 //
-// Identity model: there is no in-browser burner key. Reads run through an
-// account-less read-only client so anyone can view existing content without a
-// wallet. Writing requires the visitor to connect their own browser wallet
-// (MetaMask with the GenLayer Snap) via The Key Switch. No secret is ever
-// bundled or generated. The deploy key in .env.deploy is server-side only.
+// Identity model: reads run through a read-only client that ALWAYS carries an
+// account. genlayer-js refuses to call readContract with no account attached
+// ("No account set. Configure the client with an account or pass an account to
+// this function."), so we attach a throwaway ephemeral account (a freshly
+// generated burner key, reused across reads in this session). This burner is
+// never funded, never used to sign a write, and only satisfies the client's
+// account requirement for gasless reads. Writing still requires the visitor to
+// connect their own browser wallet (MetaMask with the GenLayer Snap) via The
+// Key Switch. The deploy key in .env.deploy is server-side only and never
+// bundled here.
 
 type AnyClient = ReturnType<typeof createClient>;
 
@@ -98,10 +104,13 @@ export class ContractAdapter implements UnderstudyAdapter {
 
   // -- identity (the keyholder) ---------------------------------------
 
-  // Read-only client. No account is attached, so reads work with no wallet.
+  // Read-only client. Always carries an ephemeral account so genlayer-js never
+  // throws "No account set" on a read. The account is a throwaway burner: never
+  // funded, never used to sign a write, generated fresh per session.
   private getReadClient(): AnyClient {
     if (this.readClient) return this.readClient;
-    this.readClient = createClient({ chain: this.chain }) as AnyClient;
+    const readAccount = createAccount(generatePrivateKey());
+    this.readClient = createClient({ chain: this.chain, account: readAccount }) as AnyClient;
     return this.readClient;
   }
 
@@ -248,6 +257,8 @@ export class ContractAdapter implements UnderstudyAdapter {
       consistent: Boolean(out.consistent),
       state: (out.state ?? "quarantined") as RuleResult["state"],
       principlesUsed: Array.isArray(out.principlesUsed) ? out.principlesUsed : [],
+      action: out.action ?? "",
+      actionId: out.actionId ?? "",
       note: out.note ?? "",
     };
   }
@@ -283,6 +294,7 @@ export class ContractAdapter implements UnderstudyAdapter {
       principles: Number(s?.principles ?? 0),
       situations: Number(s?.situations ?? 0),
       rulings: Number(s?.rulings ?? 0),
+      actions: Number(s?.actions ?? 0),
       tensions: Number(s?.tensions ?? 0),
     };
   }
@@ -333,6 +345,20 @@ export class ContractAdapter implements UnderstudyAdapter {
     let offset = 0;
     for (;;) {
       const page = await this.read<Ruling[]>("get_quarantine", [offset, limit]);
+      if (!page || page.length === 0) break;
+      all.push(...page);
+      if (page.length < limit) break;
+      offset += limit;
+    }
+    return all;
+  }
+
+  async getActions(): Promise<ActionRecord[]> {
+    const all: ActionRecord[] = [];
+    const limit = 20;
+    let offset = 0;
+    for (;;) {
+      const page = await this.read<ActionRecord[]>("get_actions", [offset, limit]);
       if (!page || page.length === 0) break;
       all.push(...page);
       if (page.length < limit) break;
