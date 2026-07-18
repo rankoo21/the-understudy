@@ -7,7 +7,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "contract:lint": "genvm-lint check contracts/UnderstudyContract.py --json",
+    "test:direct": "python -m pytest tests/direct/ -p gltest_direct -q",
+    "deploy": "node scripts/deploy.mjs",
+    "livecheck": "node scripts/livecheck.mjs",
+    "fulltest": "node scripts/fulltest.mjs"
   },
   "dependencies": {
     "framer-motion": "^11.3.0",

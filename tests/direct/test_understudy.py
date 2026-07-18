@@ -7,8 +7,22 @@ from conftest import (
     rule_consistent_response,
     rule_contradictory_response,
     rule_offtopic_consistent_response,
+    rule_audit_response,
     canon_text,
 )
+
+# Distinct prompt patterns so the leader ruling call and the validator's
+# independent consistency audit can be mocked separately.
+RULE_PAT = r"(?s).*Propose a ruling.*"
+AUDIT_PAT = r"(?s).*CONSISTENCY AUDIT.*"
+
+
+def _mock_rule_calls(direct_vm, rule_json, audit_consistent=True, audit_grounded=True):
+    """Mock the leader ruling response and the validator's independent audit."""
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(AUDIT_PAT, rule_audit_response(audit_consistent, audit_grounded))
+    direct_vm.mock_llm(RULE_PAT, rule_json)
+    direct_vm.mock_llm(r".*", rule_json)
 
 
 # ---------------------------------------------------------------------------
@@ -416,8 +430,7 @@ def test_rule_accepted_ruling_carries_downstream_action(deploy, direct_vm):
     sid = deploy.submit_situation(
         "A contributor who never missed a deadline asks for one extension.", 3000
     )
-    direct_vm.clear_mocks()
-    direct_vm.mock_llm(r".*", rule_consistent_response())
+    _mock_rule_calls(direct_vm, rule_consistent_response())
     result = deploy.rule(sid, 4000, "0xabc123")
     assert result["consistent"] is True
     assert result["state"] == "accepted"
@@ -426,7 +439,9 @@ def test_rule_accepted_ruling_carries_downstream_action(deploy, direct_vm):
     decisions = deploy.get_decisions(0, 20)
     assert decisions[0]["action"] == result["action"]
 
-    # The consensus validator agrees this grounded, action-bearing ruling stands.
+    # The consensus validator agrees this grounded, action-bearing ruling stands:
+    # the independent audit reaches the same consistent verdict for the leader's
+    # exact decision, and the deterministic grounding gates pass.
     assert direct_vm.run_validator() is True
 
 
@@ -529,12 +544,13 @@ def test_rule_validator_rejects_decision_ungrounded_in_principles(deploy, direct
         2000,
     )
     sid = deploy.submit_situation("A contributor asks for one extension.", 3000)
-    direct_vm.clear_mocks()
-    direct_vm.mock_llm(r".*", rule_offtopic_consistent_response())
-    deploy.rule(sid, 4000)
-    # The captured validator reruns the same off-topic leader: its decision text
-    # shares no substance with the owner's principles, so it disagrees.
-    assert direct_vm.run_validator() is False
+    _mock_rule_calls(direct_vm, rule_offtopic_consistent_response())
+    with direct_vm.expect_revert("downstream action did not enact the decision"):
+        deploy.rule(sid, 4000)
+    # The deterministic persistence guard rejects the off-topic leader output
+    # before any ruling or action becomes canonical state.
+    assert deploy.get_decisions(0, 20) == []
+    assert deploy.get_actions(0, 20) == []
 
 
 def test_rule_validator_rejects_consistency_verdict_mismatch(deploy, direct_vm):
@@ -549,18 +565,21 @@ def test_rule_validator_rejects_consistency_verdict_mismatch(deploy, direct_vm):
         2000,
     )
     sid = deploy.submit_situation("A contributor asks for one extension.", 3000)
-    direct_vm.clear_mocks()
-    # The live model (what the validator reruns) says the ruling is contradictory.
-    direct_vm.mock_llm(r".*", rule_contradictory_response())
+    # The independent audit (what the validator runs on the leader's exact
+    # decision) finds the ruling contradictory.
+    _mock_rule_calls(
+        direct_vm, rule_contradictory_response(), audit_consistent=False, audit_grounded=True
+    )
     deploy.rule(sid, 4000)
     # A leader that instead committed "consistent: true" with an authorized action
-    # is rejected because the validator's rerun verdict is "consistent: false".
+    # is rejected because the independent audit verdict is "consistent: false".
     leader_claim = {
         "decision": "Refuse the request outright and penalize them.",
         "consistent": True,
         "principles_used": ["Grant a first deadline extension without questions."],
         "action": "penalize the contributor",
         "decision_canonical": canon_text("Refuse the request outright and penalize them."),
+        "action_canonical": canon_text("penalize the contributor"),
     }
     assert direct_vm.run_validator(leader_result=leader_claim) is False
 
@@ -578,11 +597,12 @@ def test_rule_validator_agrees_on_canonical_decision(deploy, direct_vm):
     sid = deploy.submit_situation(
         "A contributor who never missed a deadline asks for one extension.", 3000
     )
-    direct_vm.clear_mocks()
-    direct_vm.mock_llm(r".*", rule_consistent_response())
+    _mock_rule_calls(direct_vm, rule_consistent_response())
     result = deploy.rule(sid, 4000)
     # A paraphrase of the same decision (same substance, different words) still
-    # agrees within tolerance, proving meaning-based (not byte-equal) consensus.
+    # passes: the deterministic grounding gates hold on the leader's committed
+    # fields and the independent audit confirms the consistent verdict. Consensus
+    # is meaning-based, never byte-equal on prose.
     paraphrase = "Grant the extension one time without questions because no prior deadline was missed."
     leader_claim = {
         "decision": paraphrase,
@@ -590,6 +610,50 @@ def test_rule_validator_agrees_on_canonical_decision(deploy, direct_vm):
         "principles_used": ["Grant a first deadline extension without questions."],
         "action": "grant the deadline extension",
         "decision_canonical": canon_text(paraphrase),
+        "action_canonical": canon_text("grant the deadline extension"),
     }
     assert direct_vm.run_validator(leader_result=leader_claim) is True
     assert result["consistent"] is True
+
+
+def test_rule_validator_rejects_arbitrary_downstream_action(deploy, direct_vm):
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    sid = deploy.submit_situation("A contributor asks for one extension.", 3000)
+    _mock_rule_calls(direct_vm, rule_consistent_response())
+    deploy.rule(sid, 4000)
+
+    decision = "Grant the extension once without questions because this is the first miss."
+    unrelated = "purchase delivery trucks and repaint the lobby"
+    leader_claim = {
+        "decision": decision,
+        "consistent": True,
+        "principles_used": ["Grant a first deadline extension without questions."],
+        "action": unrelated,
+        "decision_canonical": canon_text(decision),
+        "action_canonical": canon_text(unrelated),
+    }
+    assert direct_vm.run_validator(leader_result=leader_claim) is False
+
+
+def test_rule_persistence_guard_rejects_action_not_enacting_decision(deploy, direct_vm):
+    deploy.boot(1000)
+    deploy.teach(
+        "Someone asks for a first deadline extension.",
+        "Grant it once.",
+        "First slips deserve trust.",
+        2000,
+    )
+    sid = deploy.submit_situation("A contributor asks for one extension.", 3000)
+    _mock_rule_calls(
+        direct_vm,
+        rule_consistent_response(action="purchase delivery trucks and repaint the lobby"),
+    )
+    with direct_vm.expect_revert("downstream action did not enact the decision"):
+        deploy.rule(sid, 4000)
+    assert deploy.get_actions(0, 20) == []

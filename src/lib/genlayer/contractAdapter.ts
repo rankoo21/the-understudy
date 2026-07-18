@@ -90,7 +90,7 @@ export class ContractAdapter implements UnderstudyAdapter {
   readonly mode = "contract" as const;
   private readonly config: ContractAdapterConfig;
   private readonly chain: ReturnType<typeof pickChain>;
-  // Account-less client used only for reads. Always available, no wallet needed.
+  // Account-attached ephemeral client used only for reads. It needs no wallet.
   private readClient: AnyClient | null = null;
   // Wallet-backed client used for writes. Null until a wallet is connected.
   private walletClient: AnyClient | null = null;
@@ -187,13 +187,29 @@ export class ContractAdapter implements UnderstudyAdapter {
 
   private async writeAndReceipt(functionName: string, args: unknown[]): Promise<any> {
     const client = this.requireWalletClient();
-    const hash = await client.writeContract({
-      address: this.address,
-      functionName,
-      args: args as any,
-      value: 0n,
-    });
-    return client.waitForTransactionReceipt({ hash, status: ACCEPTED });
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const hash = await client.writeContract({
+          address: this.address,
+          functionName,
+          args: args as any,
+          value: 0n,
+        });
+        return await client.waitForTransactionReceipt({
+          hash,
+          status: ACCEPTED,
+          interval: 6000,
+          retries: 150,
+        });
+      } catch (error) {
+        lastError = error;
+        const message = String((error as Error)?.message ?? error);
+        if (!/revert|timed out|temporarily|429/i.test(message)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 8000));
+      }
+    }
+    throw lastError;
   }
 
   private extractReturn<T>(receipt: any): T | undefined {

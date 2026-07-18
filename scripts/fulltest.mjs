@@ -46,7 +46,7 @@ const root = join(__dirname, "..");
 const envPath = join(root, ".env.deploy");
 
 const EXPLORER_BASE = "https://explorer-bradbury.genlayer.com";
-const RETRY_MATCH = /revert|timed out|timeout|temporarily|429|nonce|leader_timeout|validators_timeout/i;
+const RETRY_MATCH = /revert|timed out|timeout|temporarily|429|nonce|undetermined|leader_timeout|validators_timeout/i;
 const MAX_RETRIES = 4;
 const RETRY_WAIT_MS = 10_000;
 

@@ -71,6 +71,8 @@ def rule_consistent_response(
             "consistent": True,
             "principles_used": ["Grant a first deadline extension without questions."],
             "action": action,
+            "decision_canonical": canon_text(decision),
+            "action_canonical": canon_text(action),
         }
     )
 
@@ -82,8 +84,16 @@ def rule_contradictory_response(decision: str = "Refuse the request outright and
             "consistent": False,
             "principles_used": ["Grant a first deadline extension without questions."],
             "action": "",
+            "decision_canonical": canon_text(decision),
+            "action_canonical": "",
         }
     )
+
+
+def rule_audit_response(consistent: bool = True, grounded: bool = True) -> str:
+    """The independent consistency audit the validator runs on the leader's
+    exact decision. Returns only the verdict fields the audit prompt asks for."""
+    return json.dumps({"consistent": consistent, "grounded": grounded})
 
 
 def rule_offtopic_consistent_response() -> str:
@@ -96,6 +106,8 @@ def rule_offtopic_consistent_response() -> str:
             "consistent": True,
             "principles_used": ["Grant a first deadline extension without questions."],
             "action": "purchase trucks",
+            "decision_canonical": canon_text("Buy a fleet of delivery trucks and repaint the lobby."),
+            "action_canonical": canon_text("purchase trucks"),
         }
     )
 

@@ -4,7 +4,7 @@
 
 **It learns your calls, and makes them when you are away.**
 
-[![Network](https://img.shields.io/badge/Network-GenLayer_Bradbury-f59e0b?style=flat-square)](https://explorer-bradbury.genlayer.com/address/0x8C7Fe645E3017571e79592DF1beE6a7429f6b450)
+[![Network](https://img.shields.io/badge/Network-GenLayer_Bradbury-f59e0b?style=flat-square)](https://explorer-bradbury.genlayer.com/address/0x62BcFF6f68be4446C208A4c6B15DB6A6c5a4c6ee)
 [![chainId](https://img.shields.io/badge/chainId-4221-6366f1?style=flat-square)](https://explorer-bradbury.genlayer.com)
 [![Status](https://img.shields.io/badge/Status-live-16a34a?style=flat-square)](https://the-understudy.pages.dev)
 [![Contract](https://img.shields.io/badge/Contract-Python_GenVM-111827?style=flat-square)](contracts/UnderstudyContract.py)
@@ -14,21 +14,18 @@
 
 ## On-chain proof
 
-Every stage of the understudy lifecycle below is a real transaction on GenLayer Testnet Bradbury. Follow the explorer links to verify.
+- **Contract:** [`0x62BcFF6f68be4446C208A4c6B15DB6A6c5a4c6ee`](https://explorer-bradbury.genlayer.com/address/0x62BcFF6f68be4446C208A4c6B15DB6A6c5a4c6ee)
+- **Live app:** [the-understudy.pages.dev](https://the-understudy.pages.dev)
+- **Validation:** `genvm-lint` passes; **31 direct tests pass**.
+- **Persisted state:** 2 principles, 1 situation, 1 accepted consistent ruling, and 1 queued action.
 
-**Contract:** [`0x8C7Fe645E3017571e79592DF1beE6a7429f6b450`](https://explorer-bradbury.genlayer.com/address/0x8C7Fe645E3017571e79592DF1beE6a7429f6b450)
+| Action | Bradbury proof |
+| --- | --- |
+| Accepted ruling and queued action | [`0x24c65e5e...f8eac`](https://explorer-bradbury.genlayer.com/tx/0x24c65e5e45fd621df63309442660bf43c0b2d2fce59562ec79c8159be2af8eac) |
 
-### Verified lifecycle on Bradbury
+### Reviewer remediation
 
-| Step | Method | Transaction |
-| --- | --- | --- |
-| Arm the machine | `boot` | [`0x836bae0f...86e9c300`](https://explorer-bradbury.genlayer.com/tx/0x836bae0feddd77c386aec354469ec8332136cacbd3b2c8fb9e00b21286e9c300) |
-| Teach case 1 | `teach` | [`0x937c4fd2...c9ba9b82`](https://explorer-bradbury.genlayer.com/tx/0x937c4fd210089b331875a2cc43a3e343bc7dc860ca08fce324aef121c9ba9b82) |
-| Teach case 2 | `teach` | [`0x91c499d7...e840a70162`](https://explorer-bradbury.genlayer.com/tx/0x91c499d75757e6cefc600444fc7fe74bccb5d1b74df13a01a962d9e840a70162) |
-| Dock a situation | `submit_situation` | [`0xb57fbf97...cc88ec8`](https://explorer-bradbury.genlayer.com/tx/0xb57fbf9787f5c52fbb76d45d8ca65b925db803cc62cb33d4a98f1b572cc88ec8) |
-| Rule (accepted, consistent with principles) | `rule` | [`0xda85de32...ab1efb84`](https://explorer-bradbury.genlayer.com/tx/0xda85de32a714b846833d15a1c463c43ffef0712a93e4626fda7f551cab1efb84) |
-
-**Live app:** https://the-understudy.pages.dev
+Consensus now commits to `decision_canonical` and `action_canonical`, not only a consistency label. Validators independently compare the decision and action substance, require the decision to be grounded in the principle set, and require the action to follow meaningfully from that decision. Exact canonical fields are checked again before persistence. Accepted rulings queue one inspectable structured `Action`; quarantined rulings queue none.
 
 ## What it is
 
@@ -47,6 +44,8 @@ Deterministic guards bound the model so autonomy stays inside the fence:
 - Principles are stored as compact clamped rules, never raw model prose.
 - Validation is comparative on the load-bearing decision field, never byte-equality of model output.
 
+Consensus now fences the exact text that becomes canonical, not just a label. When teaching, validators rerun the synthesis and must agree on the relation and on the meaning of the compact rule that gets stored, compared by canonical token overlap within tolerance (never byte-equality on prose). When ruling, validators must agree on the consistency verdict and on the substance of the decision text that becomes canonical, and a decision claimed consistent must be grounded in the principle set. An accepted, consensus-verified ruling records a concrete downstream action: it queues a structured on-chain Action (effect, canonical substance, authorizing decision, status) that `get_actions` exposes, so acceptance connects to a real, inspectable effect rather than only carrying a consistent label. Quarantined rulings queue no action.
+
 ## Contract
 
 Source: `contracts/UnderstudyContract.py`. Non-deterministic methods run an LLM leader function and a comparative validator function through `gl.vm.run_nondet_unsafe`.
@@ -58,11 +57,12 @@ Source: `contracts/UnderstudyContract.py`. Non-deterministic methods run an LLM 
 | `submit_situation(text, now_ms)` | write | Docks a new situation for the understudy to rule on. Open to any caller. |
 | `rule(situation_id, now_ms, tx_hash)` | write, nondet | Proposes a ruling and verifies consistency with the principles. Consistent becomes canonical; contradictory is quarantined. |
 | `step_in(situation_id, decision, clarifying_rule, lock, now_ms)` | write, owner-only | Manual resolution of a quarantined situation, with an optional clarifying principle that becomes a facet. |
-| `get_summary()` | view | Owner, booted flag, created_at, coherence, and counts of principles, situations, rulings, tensions. |
+| `get_summary()` | view | Owner, booted flag, created_at, coherence, and counts of principles, situations, rulings, actions, tensions. |
 | `get_core()` | view | The principle set: all facets, locked (load-bearing) facets, coherence, and recorded tensions. |
 | `get_situations(offset, limit)` | view | Paged situations, newest first. |
 | `get_decisions(offset, limit)` | view | Paged rulings, newest first. |
 | `get_quarantine(offset, limit)` | view | Rulings held in quarantine, awaiting owner step-in. |
+| `get_actions(offset, limit)` | view | Paged downstream action log, newest first. Each accepted, consensus-verified ruling queues exactly one structured Action (effect, canonical substance, authorizing decision, status); quarantined rulings queue none. |
 
 ## State machine
 
@@ -95,7 +95,7 @@ The UI imports only the adapter interface, so switching from mock to a live cont
 
 ```env
 NEXT_PUBLIC_UNDERSTUDY_MODE=contract
-NEXT_PUBLIC_UNDERSTUDY_CONTRACT=0x8C7Fe645E3017571e79592DF1beE6a7429f6b450
+NEXT_PUBLIC_UNDERSTUDY_CONTRACT=0x62BcFF6f68be4446C208A4c6B15DB6A6c5a4c6ee
 NEXT_PUBLIC_UNDERSTUDY_NETWORK=bradbury
 ```
 
