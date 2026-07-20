@@ -165,6 +165,11 @@ export class ContractAdapter implements UnderstudyAdapter {
       addr = accounts?.[0];
     }
     if (!addr) throw new Error("Wallet connected but no account was returned.");
+    // connect() activates the Snap and switches the network but does NOT set
+    // client.account. genlayer-js validates client.account on every write
+    // ("No account set" otherwise), so attach the connected address here.
+    // Signing still goes through the GenLayer Snap in MetaMask.
+    (client as any).account = addr as `0x${string}`;
     this.walletClient = client;
     this.walletAddress = addr;
     this.usingWallet = true;
