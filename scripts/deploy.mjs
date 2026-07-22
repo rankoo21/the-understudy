@@ -23,7 +23,7 @@ import { TransactionStatus } from "genlayer-js/types";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const envPath = join(root, ".env.deploy");
-const contractPath = join(root, "contracts", "UnderstudyContract.py");
+const contractPath = join(root, "contracts", "ReleaseGateContract.py");
 
 function parseEnv(path) {
   const out = {};
@@ -53,10 +53,10 @@ function pickChain(name) {
 
 function writeBackAddress(path, address) {
   let text = existsSync(path) ? readFileSync(path, "utf8") : "";
-  if (/^UNDERSTUDY_CONTRACT_ADDRESS=.*$/m.test(text)) {
-    text = text.replace(/^UNDERSTUDY_CONTRACT_ADDRESS=.*$/m, `UNDERSTUDY_CONTRACT_ADDRESS=${address}`);
+  if (/^RELEASEGATE_CONTRACT_ADDRESS=.*$/m.test(text)) {
+    text = text.replace(/^RELEASEGATE_CONTRACT_ADDRESS=.*$/m, `RELEASEGATE_CONTRACT_ADDRESS=${address}`);
   } else {
-    text += (text.endsWith("\n") || text === "" ? "" : "\n") + `UNDERSTUDY_CONTRACT_ADDRESS=${address}\n`;
+    text += (text.endsWith("\n") || text === "" ? "" : "\n") + `RELEASEGATE_CONTRACT_ADDRESS=${address}\n`;
   }
   writeFileSync(path, text);
 }
@@ -82,7 +82,7 @@ async function main() {
   const client = createClient(clientOpts);
 
   const code = readFileSync(contractPath);
-  console.log("Deploying UnderstudyContract...");
+  console.log("Deploying ReleaseGateContract...");
 
   const txHash = await client.deployContract({ code, args: [] });
   console.log(`Deploy tx: ${txHash}`);
@@ -110,15 +110,15 @@ async function main() {
   }
 
   console.log("");
-  console.log("Deployed UnderstudyContract at:");
+  console.log("Deployed ReleaseGateContract at:");
   console.log("  " + address);
   writeBackAddress(envPath, address);
 
   console.log("");
   console.log("Add these to your frontend env (.env.local) to go live:");
-  console.log(`  NEXT_PUBLIC_UNDERSTUDY_MODE=contract`);
-  console.log(`  NEXT_PUBLIC_UNDERSTUDY_CONTRACT=${address}`);
-  console.log(`  NEXT_PUBLIC_UNDERSTUDY_NETWORK=${networkName}`);
+  console.log(`  NEXT_PUBLIC_RELEASEGATE_MODE=contract`);
+  console.log(`  NEXT_PUBLIC_RELEASEGATE_CONTRACT=${address}`);
+  console.log(`  NEXT_PUBLIC_RELEASEGATE_NETWORK=${networkName}`);
 }
 
 main().catch((err) => {

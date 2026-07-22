@@ -1,15 +1,15 @@
 {
-  "name": "the-understudy",
+  "name": "release-gate",
   "version": "0.1.0",
   "private": true,
-  "description": "It learns your calls, and makes them when you are away.",
+  "description": "Consensus-backed release readiness checks on GenLayer.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
-    "contract:lint": "genvm-lint check contracts/UnderstudyContract.py --json",
+    "contract:lint": "genvm-lint check contracts/ReleaseGateContract.py --json",
     "test:direct": "python -m pytest tests/direct/ -p gltest_direct -q",
     "deploy": "node scripts/deploy.mjs",
     "livecheck": "node scripts/livecheck.mjs",

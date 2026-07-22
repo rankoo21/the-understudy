@@ -1,23 +1,19 @@
-import type { UnderstudyAdapter } from "./types";
-import { MockAdapter } from "./mockAdapter";
+import type { ReleaseGateAdapter } from "./types";
 import { ContractAdapter } from "./contractAdapter";
+import { MockAdapter } from "./mockAdapter";
 
-// Single place that decides which adapter is live. The UI imports getAdapter()
-// and never imports a concrete adapter directly.
-let cached: UnderstudyAdapter | null = null;
+let cached: ReleaseGateAdapter | null = null;
 
-export function getAdapter(): UnderstudyAdapter {
+export function getAdapter(): ReleaseGateAdapter {
   if (cached) return cached;
 
-  const mode = process.env.NEXT_PUBLIC_UNDERSTUDY_MODE ?? "mock";
-  const contractAddress = process.env.NEXT_PUBLIC_UNDERSTUDY_CONTRACT ?? "";
-  const network = process.env.NEXT_PUBLIC_UNDERSTUDY_NETWORK ?? "studionet";
+  const mode = process.env.NEXT_PUBLIC_RELEASEGATE_MODE ?? "mock";
+  const contractAddress = process.env.NEXT_PUBLIC_RELEASEGATE_CONTRACT ?? "";
+  const network = process.env.NEXT_PUBLIC_RELEASEGATE_NETWORK ?? "bradbury";
 
-  if (mode === "contract" && contractAddress) {
-    cached = new ContractAdapter({ contractAddress, network });
-  } else {
-    cached = new MockAdapter();
-  }
+  cached = mode === "contract" && contractAddress
+    ? new ContractAdapter({ contractAddress, network })
+    : new MockAdapter();
   return cached;
 }
 
