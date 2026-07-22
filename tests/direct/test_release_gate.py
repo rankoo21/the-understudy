@@ -148,20 +148,18 @@ def test_rejects_ungrounded_model_excerpt(deploy, direct_vm):
         deploy.submit_check("ungrounded", payload(), 1)
 
 
-def test_validator_rejects_verdict_status_and_blocker_mismatches(deploy, direct_vm):
+def test_validator_rejects_verdict_mismatch(deploy, direct_vm):
+    # A different load-bearing verdict must be rejected. The mocked leader below
+    # normalizes to a "blocked" verdict (a failed test check), while the armed
+    # validator independently reaches "ready".
     deploy.submit_check("validator", payload(), 1)
-    leader = json.loads(assessment())
-    leader["checks"]["tests"]["status"] = "failed"
-    leader["blocker_categories"] = ["test_failure"]
-    leader["blockers"] = ["Tests failed."]
-    assert direct_vm.run_validator(leader_result=leader) is False
-
-    leader = json.loads(assessment())
-    leader["blocker_categories"] = ["known_risk"]
+    leader = json.loads(assessment(tests="failed", categories=["test_failure"], blockers=["Tests failed."]))
     assert direct_vm.run_validator(leader_result=leader) is False
 
 
-def test_validator_rejects_confidence_mismatch(deploy, direct_vm):
+def test_validator_accepts_same_verdict_with_differing_confidence(deploy, direct_vm):
+    # Consensus compares only the load-bearing verdict, so honest confidence
+    # variation still agrees instead of forcing UNDETERMINED.
     deploy.submit_check("confidence", payload(), 1)
     leader = json.loads(assessment(confidence="low"))
-    assert direct_vm.run_validator(leader_result=leader) is False
+    assert direct_vm.run_validator(leader_result=leader) is True

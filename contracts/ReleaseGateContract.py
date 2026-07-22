@@ -266,14 +266,12 @@ class ReleaseGateContract(gl.Contract):
             try:
                 mine = evaluate()
                 their_normalized = _normalize_assessment(theirs, payload)
-                their_statuses = [their_normalized["checks"][name]["status"] for name in CHECK_NAMES]
-                my_statuses = [mine["checks"][name]["status"] for name in CHECK_NAMES]
-                return (
-                    their_normalized["verdict"] == mine["verdict"]
-                    and their_normalized["confidence"] == mine["confidence"]
-                    and their_statuses == my_statuses
-                    and their_normalized["blocker_categories"] == mine["blocker_categories"]
-                )
+                # Consensus compares only the load-bearing release verdict.
+                # Confidence, per-check statuses, and blocker categories vary
+                # between independent LLM runs; requiring exact agreement on all
+                # of them drives honest validators to UNDETERMINED. The verdict
+                # (ready / blocked / needs_review) is the stable decision.
+                return their_normalized["verdict"] == mine["verdict"]
             except Exception:
                 return False
 
